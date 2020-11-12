@@ -1,0 +1,427 @@
+#!/bin/node
+
+const http = require('http');
+const url  = require('url');
+const fs   = require('fs');
+
+const server = http.createServer(listener);
+
+function listener(req, res) {
+    const parsed = url.parse(req.url, true);
+
+    if (req.method = 'GET') {
+        if (parsed.query.path) {
+            viewDirectory(req, res, parsed.query);
+            return;
+        } 
+        if (parsed.path === '/') {
+            viewEntryPoint(req, res);
+            return;
+        }
+        viewFile(req, res, parsed.path);
+        return;
+    }
+    if (req.method = 'POST') {
+        if (parsed.query.path) {
+            viewUpload(req, res, parsed.query.path);
+            return;
+        } 
+    }
+    return;
+}
+
+function viewDirectory(req, res, query) {
+    res.setHeader('Content-Type', 'application/json');
+
+    const target = query.path || '.';
+    const packet = {
+        code: 200,
+        message: 'Good',
+        data: [],
+    };
+
+    if (!fs.existsSync(target)) {
+        packet.code    = 404;
+        packet.message = 'Path does not exist';
+        res.end(JSON.stringify(packet));
+        return;
+    }
+
+    if (query.exists) {
+        res.end(JSON.stringify(packet));
+        return;
+    }
+
+    if (!fs.lstatSync(target).isDirectory()) {
+        packet.code    = 204;
+        packet.message = 'Path is not a directory';
+        res.end(JSON.stringify(packet));
+        return;
+    }
+
+    fs.readdirSync(target).forEach(item => {
+        const path = `${target}/${item}`;
+        const stat = fs.lstatSync(path);
+        const date = fs.statSync(path).mtime;
+        const type = (stat.isFile() && 'File') ||
+                     (stat.isDirectory() && 'Directory') ||
+                     (stat.isSymbolicLink() && 'SymbolicLink') ||
+                     'Unknown';
+
+        packet.data.push({
+            path,
+            pathname: item,
+            type,
+            info: {
+                ...getFileExtentionInfo(path),
+                date,
+            }
+        });
+    });
+    res.end(JSON.stringify(packet));
+    return;
+}
+
+function viewFile(req, res, filepath) {
+    const target = `.${filepath}`;
+    const info = getFileExtentionInfo(target);
+
+    if (!fs.existsSync(target)) {
+        viewNotFound(req, res);
+        return;
+    }
+
+    fs.readFile(target, (err, data) => {
+        if (err) {
+            res.statusCode = 500;
+            res.end();
+        } else {
+            res.setHeader('Content-Type', info.type);
+            res.end(data);
+        }
+    });
+}
+
+function viewNotFound(req, res) {
+    res.statusCode = 404;
+    res.setHeader('Content-Type', 'text/html');
+    res.write('<h1>404</h1>');
+    res.write('<p>Page not found!</p>');
+    res.end();
+}
+
+function viewEntryPoint(req, res) {
+    res.setHeader('Content-Type', 'text/html');
+    res.end(writeHtml(`
+        .container {
+            display: flex;
+            flex-direction: column;
+            max-width: 800px;
+            max-height: 100vh;
+            height: 100vh;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .list-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            background-color: #fff;
+            color: #222;
+            padding: 0px 10px;
+        }
+        .list-container .item {
+            display: flex;
+            flex-direction: row;
+            padding: 7px 0px;
+            border-bottom: 1px solid #eee;
+
+            word-wrap: anywhere;
+
+            -ms-word-break: break-all;
+            word-break: break-all;
+            word-break: break-word;
+            -webkit-hyphens: auto;
+            -moz-hyphens: auto;
+            hyphens: auto;
+        }
+        .list-container .item .icon {
+            min-width: 3ch;
+            text-align: left;
+            font-family: monospace;
+            color: #aaa;
+        }
+        .message {
+            padding: 3px 10px;
+            font-size: 10px;
+            color: #aaa;
+            background-color: #eee;
+        }
+        .button-container {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            padding: 10px;
+            background-color: #62a;
+            color: #fff;
+        }
+    `, `
+        <div class="container">
+            <div class="list-container" id="list"></div>
+            <div class="message" id="message"></div>
+            <div class="button-container">
+                <div class="button" id="sort-button">
+                    SORT: <span id="sort-value">NAME</span>
+                </div>
+                <div class="button" id="back-button">BACK</div>
+            </div>
+        </div>
+    `, `
+        const listL = document.getElementById('list');
+        const messageL = document.getElementById('message');
+        const backButtonL = document.getElementById('back-button');
+        const sortButtonL = document.getElementById('sort-button');
+        const sortValueL = document.getElementById('sort-value');
+
+        let sortValue = 'NAME';
+        let lastPath = '.';
+
+        if (localStorage.hasOwnProperty('lastPath')) {
+            lastPath = localStorage.getItem('lastPath');
+        }
+        if (localStorage.hasOwnProperty('sortValue')) {
+            sortValue = localStorage.getItem('sortValue');
+        }
+
+        sortValueL.textContent = sortValue;
+        sortButtonL.addEventListener('click', ev => {
+            if (sortValue === 'NAME')
+                sortValue = 'TYPE';
+            else if (sortValue === 'TYPE')
+                sortValue = 'DATE DESC';
+            else if (sortValue === 'DATE DESC')
+                sortValue = 'DATE ASC';
+            else if (sortValue === 'DATE ASC')
+                sortValue = 'NAME';
+
+            sortValueL.textContent = sortValue;
+            localStorage.setItem('sortValue', sortValue);
+            getDirectoryList(lastPath);
+        });
+
+        fetch('?path=' + lastPath + '&exists=1')
+            .then(response => response.json())
+            .then(result => {
+                if (result.code === 404) {
+                    lastPath = '.';
+                }
+                getDirectoryList(lastPath);
+            });
+
+
+        async function getDirectoryList(path) {
+            listL.textContent = '';
+            messageL.textContent = path;
+            localStorage.setItem('lastPath', path);
+            lastPath = path;
+
+            const response = await fetch('?path=' + path);
+            const res = await response.json();
+
+            if (res.code === 200) {
+                backButtonL.onclick = ev => {
+                    if (path === '.') return;
+
+                    const paths = path.split('/');
+                    paths.pop();
+                    getDirectoryList(paths.join('/'));
+                };
+
+                let list = res.data.filter(item => !(/(^\\.|~$)/.test(item.pathname)))
+                    .sort((a, b) => (
+                        a.pathname.toLowerCase().localeCompare(b.pathname.toLowerCase())
+                    ));
+
+                if (sortValue === 'TYPE')
+                    list.sort((a, b) => (
+                        a.info.extention.localeCompare(b.info.extention)
+                    ));
+
+                if (/^DATE/.test(sortValue))
+                    list.sort((a, b) => {
+                        const dateA = new Date(a.info.date);
+                        const dateB = new Date(b.info.date);
+                        const isAsc = /ASC$/.test(sortValue);
+                        if (dateA < dateB) return isAsc ? -1 : 1;
+                        if (dateA > dateB) return isAsc ? 1 : -1;
+                        return 0;
+                    });
+
+
+                list.forEach(item => {
+                    const extention = item.pathname.split('.').pop().toLowerCase();
+                    const iconL = document.createElement('div');
+                    const textL = document.createElement('div');
+                    const itemL = document.createElement('div');
+                    iconL.className = 'icon';
+                    iconL.textContent = 'Uk';
+                    textL.textContent = item.pathname;
+                    itemL.className = 'item';
+                    itemL.appendChild(iconL);
+                    itemL.appendChild(textL);
+
+                    const setIconProp = (initial, color) => {
+                        iconL.textContent = initial;
+                        iconL.style.color = color;
+                    };
+
+                    if (item.type === 'Directory') {
+                        setIconProp('Dr', '#62a');
+                    } else {
+                        switch (extention) {
+                            case 'jpg':
+                            case 'jpeg':
+                            case 'png':
+                            case 'gif':
+                            case 'svg':
+                                setIconProp('Im', '#d23');
+                                break;
+                            case 'mkv':
+                            case 'mp4':
+                                setIconProp('Vd', '#3a3');
+                                break;
+                            case 'mp3':
+                            case 'wav':
+                                setIconProp('Au', '#aaa');
+                                break;
+                            case 'pdf':
+                            case 'epub':
+                            case 'doc':
+                            case 'docx':
+                                setIconProp('Bk', '#39a');
+                                break;
+                            default: 
+                                setIconProp('Un', '#aaa');
+                                break;
+                        }
+                    }
+
+                    itemL.addEventListener('click', ev => {
+                        if (item.type === 'File')
+                            location.href = item.path;
+
+                        if (item.type === 'Directory') 
+                            getDirectoryList(item.path);
+                    });
+                    listL.appendChild(itemL);
+                });
+            }
+            
+        }
+    `));
+}
+
+function viewUpload(req, res, query) {
+    res.setHeader('Content-Type', 'application/json');
+
+    const target = query.path || '.';
+    const contentLength = parseInt(req.headers['content-length']);
+    const packet = {
+        code: 200,
+        message: 'Good',
+    };
+
+    if (isNaN(contentLength) || contentLength <= 0) {
+        packet.code = 411;
+        packet.message = 'No file';
+        res.end(JSON.stringify(packet));
+        return;
+    }
+
+    let filename = req.headers['filename'];
+    if (filename == null) {
+        filename = "file." + req.headers['content-type'].split('/')[1];
+    }
+    const filestream = fs.createWriteStream(`${target}/${filename}`);
+    filestream.on("error", (error) => {
+        packet.code = 500;
+        packet.message = 'Could not create file';
+        res.end(JSON.stringify(packet));
+    })
+
+    // Write data as it comes
+    req.pipe(filestream);
+    req.on('end', () => {
+        filestream.close(() => {
+            packet.code = 200;
+            packet.message = 'Everything is good';
+            response.end(JSON.stringify(packet))
+        })
+    })
+}
+
+function writeHtml(style, body, script) {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+        <title>WFileServer</title>
+        <style>
+            * {
+                margin: 0px;
+                padding: 0px;
+                box-sizing: border-box;
+            }
+            body {
+                font-family: sans-serif;
+                font-size: 16px;
+                background-color: #fff;
+                color: #222;
+            }
+            ${style}
+        </style>
+        </head>
+        <body>
+        ${body}
+        <script>${script}</script>
+        </body>
+        </html>
+    `;
+}
+
+function getFileExtentionInfo(path) {
+    const map = {
+        '.ico': 'image/x-icon',
+        '.html': 'text/html',
+        '.js': 'text/javascript',
+        '.json': 'application/json',
+        '.css': 'text/css',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.wav': 'audio/wav',
+        '.mp3': 'audio/mpeg',
+        '.svg': 'image/svg+xml',
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword'
+    };
+    const target = `.${path}` || '.';
+    const extention = require('path').parse(target).ext;
+    const type = map[extention] || 'text/plain';
+
+    return {
+        extention,
+        type
+    };
+}
+
+const port = 8021;
+const ifaces = require('os').networkInterfaces()
+for (key in ifaces) {
+    const address = ifaces[key].filter(item => item.family === 'IPv4')
+                         .map(item => item.address);
+    console.log(`listening on http://${address}:${port}`);
+}
+
+server.listen(port);
+
