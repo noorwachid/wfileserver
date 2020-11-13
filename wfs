@@ -18,23 +18,23 @@ function listener(req, res) {
             viewEntryPoint(req, res);
             return;
         }
-        viewFile(req, res, parsed.path);
+        viewFile(req, res, decodeURIComponent(parsed.path));
         return;
     }
     if (req.method === 'POST') {
         if (parsed.query.path) {
-            viewUpload(req, res, parsed.query.path);
+            viewUpload(req, res, decodeURIComponent(parsed.query.path));
             return;
         } 
     }
-    viewFile(req, res, parsed.path);
+    viewFile(req, res, decodeURIComponent(parsed.path));
     return;
 }
 
 function viewDirectory(req, res, query) {
     res.setHeader('Content-Type', 'application/json');
 
-    const target = query.path || '.';
+    const target = decodeURIComponent(query.path) || '.';
     const packet = {
         code: 200,
         message: 'Good',
