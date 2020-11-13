@@ -7,9 +7,11 @@ const fs   = require('fs');
 const server = http.createServer(listener);
 
 function listener(req, res) {
+    console.log(`ROUTE: ${req.method} ${req.url}`);
+
     const parsed = url.parse(req.url, true);
 
-    if (req.method = 'GET') {
+    if (req.method === 'GET') {
         if (parsed.query.path) {
             viewDirectory(req, res, parsed.query);
             return;
@@ -21,12 +23,13 @@ function listener(req, res) {
         viewFile(req, res, parsed.path);
         return;
     }
-    if (req.method = 'POST') {
+    if (req.method === 'POST') {
         if (parsed.query.path) {
             viewUpload(req, res, parsed.query.path);
             return;
         } 
     }
+    viewFile(req, res, parsed.path);
     return;
 }
 
@@ -150,11 +153,22 @@ function viewEntryPoint(req, res) {
             font-family: monospace;
             color: #aaa;
         }
-        .message {
+        .message,
+        .progress div {
             padding: 3px 10px;
             font-size: 10px;
-            color: #aaa;
+        }
+        .progress {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .message {
             background-color: #eee;
+            color: #aaa;
+        }
+        .progress div {
+            background-color: #0bb565;
+            color: #fff;
         }
         .button-container {
             display: flex;
@@ -164,16 +178,28 @@ function viewEntryPoint(req, res) {
             background-color: #62a;
             color: #fff;
         }
+        #upload-sender {
+            display: none;
+        }
+        .empty {
+            color: #aaa;
+            margin-top: 100px;
+            font-size: 20px;
+            text-align: center;
+        }
     `, `
         <div class="container">
             <div class="list-container" id="list"></div>
             <div class="message" id="message"></div>
+            <div class="progress" id="progress"></div>
             <div class="button-container">
                 <div class="button" id="sort-button">
                     SORT: <span id="sort-value">NAME</span>
                 </div>
+                <label class="button" for="upload-sender">UPLOAD</label>
                 <div class="button" id="back-button">BACK</div>
             </div>
+            <input type="file" id="upload-sender" multiple>
         </div>
     `, `
         const listL = document.getElementById('list');
@@ -181,6 +207,8 @@ function viewEntryPoint(req, res) {
         const backButtonL = document.getElementById('back-button');
         const sortButtonL = document.getElementById('sort-button');
         const sortValueL = document.getElementById('sort-value');
+        const uploadSenderL = document.getElementById('upload-sender');
+        const progressL = document.getElementById('progress');
 
         let sortValue = 'NAME';
         let lastPath = '.';
@@ -190,6 +218,60 @@ function viewEntryPoint(req, res) {
         }
         if (localStorage.hasOwnProperty('sortValue')) {
             sortValue = localStorage.getItem('sortValue');
+        }
+
+        uploadSenderL.addEventListener('change', ev => {
+            for (let i = 0; i < uploadSenderL.files.length; ++i) {
+                xhrSendFile(uploadSenderL.files[i]);
+            }
+        });
+
+        function xhrSendFile(file) {
+            const l = document.createElement('div');
+            const xhr = new XMLHttpRequest();
+            const uploaddir = lastPath;
+            
+            progressL.appendChild(l);
+            l.textContent = file.name;
+            const onDone = () => {
+                l.addEventListener('click', ev => progressL.removeChild(l));
+                setTimeout(() => progressL.removeChild(l), 2000);
+            };
+            const formatBytes = (bytes, decimals = 2) => {
+                if (bytes === 0) return '0 Bytes';
+            
+                const k = 1024;
+                const dm = decimals < 0 ? 0 : decimals;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+            }
+            xhr.upload.onprogress = ev => {
+                l.textContent = file.name + ' ' 
+                    + formatBytes(ev.loaded) + '/' + formatBytes(ev.total) + ' KB [' 
+                    + (ev.loaded/ev.total * 100).toFixed(1) + '%]';
+            };
+
+            xhr.onload = ev => {
+                if (xhr.status === 200) {
+                    l.textContent = file.name + ' is uploaded';
+                    if (uploaddir === lastPath) {
+                        // getDirectoryList(lastPath);
+                    }
+                } else {
+                    l.textContent = file.name + ' is failed to upload';
+                }
+                onDone();
+            };
+            xhr.onerror = ev => {
+                l.textContent = file.name + ' is failed to upload';
+                console.log(xhr);
+                onDone();
+            };
+
+            xhr.open('POST', '/?path=' + uploaddir);
+            xhr.setRequestHeader('filename', file.name);
+            xhr.send(file);
         }
 
         sortValueL.textContent = sortValue;
@@ -219,7 +301,7 @@ function viewEntryPoint(req, res) {
 
 
         async function getDirectoryList(path) {
-            listL.textContent = '';
+            listL.innerHTML = '';
             messageL.textContent = path;
             localStorage.setItem('lastPath', path);
             lastPath = path;
@@ -240,6 +322,10 @@ function viewEntryPoint(req, res) {
                     .sort((a, b) => (
                         a.pathname.toLowerCase().localeCompare(b.pathname.toLowerCase())
                     ));
+
+                if (list.length === 0) {
+                    listL.innerHTML = '<div class="empty">Empty</div>';
+                }
 
                 if (sortValue === 'TYPE')
                     list.sort((a, b) => (
@@ -312,6 +398,7 @@ function viewEntryPoint(req, res) {
                         if (item.type === 'Directory') 
                             getDirectoryList(item.path);
                     });
+
                     listL.appendChild(itemL);
                 });
             }
@@ -320,10 +407,10 @@ function viewEntryPoint(req, res) {
     `));
 }
 
-function viewUpload(req, res, query) {
+function viewUpload(req, res, path) {
     res.setHeader('Content-Type', 'application/json');
 
-    const target = query.path || '.';
+    const target = path || '.';
     const contentLength = parseInt(req.headers['content-length']);
     const packet = {
         code: 200,
@@ -341,22 +428,26 @@ function viewUpload(req, res, query) {
     if (filename == null) {
         filename = "file." + req.headers['content-type'].split('/')[1];
     }
-    const filestream = fs.createWriteStream(`${target}/${filename}`);
-    filestream.on("error", (error) => {
+
+    const fullpath = `${target}/${filename}`;
+    const filestream = fs.createWriteStream(fullpath);
+    console.log(`UPLOAD: ${fullpath}`);
+
+    filestream.on("error", error => {
         packet.code = 500;
         packet.message = 'Could not create file';
         res.end(JSON.stringify(packet));
-    })
+    });
 
-    // Write data as it comes
     req.pipe(filestream);
     req.on('end', () => {
         filestream.close(() => {
             packet.code = 200;
             packet.message = 'Everything is good';
-            response.end(JSON.stringify(packet))
-        })
-    })
+            res.end(JSON.stringify(packet));
+        });
+    });
+
 }
 
 function writeHtml(style, body, script) {
