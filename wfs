@@ -393,7 +393,7 @@ function viewEntryPoint(req, res) {
 
                     itemL.addEventListener('click', ev => {
                         if (item.type === 'File')
-                            location.href = item.path;
+                            open(item.path);
 
                         if (item.type === 'Directory') 
                             getDirectoryList(item.path);
