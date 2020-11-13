@@ -7,8 +7,6 @@ const fs   = require('fs');
 const server = http.createServer(listener);
 
 function listener(req, res) {
-    console.log(`ROUTE: ${req.method} ${req.url}`);
-
     const parsed = url.parse(req.url, true);
 
     if (req.method === 'GET') {
@@ -88,6 +86,8 @@ function viewDirectory(req, res, query) {
 function viewFile(req, res, filepath) {
     const target = `.${filepath}`;
     const info = getFileExtentionInfo(target);
+
+    console.log(`DOWNLOAD: ${target}`);
 
     if (!fs.existsSync(target)) {
         viewNotFound(req, res);
