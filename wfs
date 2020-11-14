@@ -116,12 +116,22 @@ function viewNotFound(req, res) {
 function viewEntryPoint(req, res) {
     res.setHeader('Content-Type', 'text/html');
     res.end(writeHtml(`
+        body {
+            word-wrap: anywhere;
+
+            -ms-word-break: break-all;
+            word-break: break-all;
+            word-break: break-word;
+            -webkit-hyphens: auto;
+            -moz-hyphens: auto;
+            hyphens: auto;
+        }
         .container {
             display: flex;
             flex-direction: column;
             max-width: 800px;
+            min-height: 100vh;
             max-height: 100vh;
-            height: 100vh;
             margin-left: auto;
             margin-right: auto;
         }
@@ -138,20 +148,16 @@ function viewEntryPoint(req, res) {
             padding: 7px 0px;
             border-bottom: 1px solid #eee;
 
-            word-wrap: anywhere;
-
-            -ms-word-break: break-all;
-            word-break: break-all;
-            word-break: break-word;
-            -webkit-hyphens: auto;
-            -moz-hyphens: auto;
-            hyphens: auto;
         }
         .list-container .item .icon {
             min-width: 3ch;
             text-align: left;
             font-family: monospace;
             color: #aaa;
+        }
+        .message,
+        .progress {
+            flex-shrink: 0;
         }
         .message,
         .progress div {
@@ -167,6 +173,7 @@ function viewEntryPoint(req, res) {
             color: #aaa;
         }
         .progress div {
+            display: block;
             background-color: #0bb565;
             color: #fff;
         }
@@ -213,8 +220,8 @@ function viewEntryPoint(req, res) {
         let sortValue = 'NAME';
         let lastPath = '.';
 
-        if (localStorage.hasOwnProperty('lastPath')) {
-            lastPath = localStorage.getItem('lastPath');
+        if (sessionStorage.hasOwnProperty('lastPath')) {
+            lastPath = sessionStorage.getItem('lastPath');
         }
         if (localStorage.hasOwnProperty('sortValue')) {
             sortValue = localStorage.getItem('sortValue');
@@ -303,7 +310,7 @@ function viewEntryPoint(req, res) {
         async function getDirectoryList(path) {
             listL.innerHTML = '';
             messageL.textContent = path;
-            localStorage.setItem('lastPath', path);
+            sessionStorage.setItem('lastPath', path);
             lastPath = path;
 
             const response = await fetch('?path=' + path);
@@ -431,11 +438,12 @@ function viewUpload(req, res, path) {
 
     const fullpath = `${target}/${filename}`;
     const filestream = fs.createWriteStream(fullpath);
-    console.log(`UPLOAD: ${fullpath}`);
+    console.log(`UPLOAD.BEGIN: ${fullpath}`);
 
     filestream.on("error", error => {
         packet.code = 500;
         packet.message = 'Could not create file';
+        console.log(`UPLOAD.ERROR: ${fullpath}`);
         res.end(JSON.stringify(packet));
     });
 
@@ -444,6 +452,7 @@ function viewUpload(req, res, path) {
         filestream.close(() => {
             packet.code = 200;
             packet.message = 'Everything is good';
+            console.log(`UPLOAD.END: ${fullpath}`);
             res.end(JSON.stringify(packet));
         });
     });
