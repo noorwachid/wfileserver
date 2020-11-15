@@ -18,8 +18,6 @@ function listener(req, res) {
             viewEntryPoint(req, res);
             return;
         }
-        viewFile(req, res, decodeURIComponent(parsed.path));
-        return;
     }
     if (req.method === 'POST') {
         if (parsed.query.path) {
@@ -61,13 +59,13 @@ function viewDirectory(req, res, query) {
     }
 
     fs.readdirSync(target).forEach(item => {
-        const path = `${target}/${item}`;
-        const stat = fs.lstatSync(path);
-        const date = fs.statSync(path).mtime;
-        const type = (stat.isFile() && 'File') ||
-                     (stat.isDirectory() && 'Directory') ||
-                     (stat.isSymbolicLink() && 'SymbolicLink') ||
-                     'Unknown';
+        const path  = `${target}/${item}`;
+        const lstat = fs.lstatSync(path);
+        const stat  = fs.statSync(path);
+        const type  = (lstat.isFile() && 'File') ||
+                      (lstat.isDirectory() && 'Directory') ||
+                      (lstat.isSymbolicLink() && 'SymbolicLink') ||
+                      'Unknown';
 
         packet.data.push({
             path,
@@ -75,7 +73,8 @@ function viewDirectory(req, res, query) {
             type,
             info: {
                 ...getFileExtentionInfo(path),
-                date,
+                date: stat.mdate,
+                size: stat.size,
             }
         });
     });
@@ -145,6 +144,7 @@ function viewEntryPoint(req, res) {
         .list-container .item {
             display: flex;
             flex-direction: row;
+            justify-content: space-between;
             padding: 7px 0px;
             border-bottom: 1px solid #eee;
 
@@ -153,6 +153,13 @@ function viewEntryPoint(req, res) {
             min-width: 3ch;
             text-align: left;
             font-family: monospace;
+            color: #aaa;
+        }
+        .list-container .item .icon,
+        .list-container .item .text {
+            display: inline-block;
+        }
+        .list-container .item .size {
             color: #aaa;
         }
         .message,
@@ -233,6 +240,15 @@ function viewEntryPoint(req, res) {
             }
         });
 
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
         function xhrSendFile(file) {
             const l = document.createElement('div');
             const xhr = new XMLHttpRequest();
@@ -244,15 +260,6 @@ function viewEntryPoint(req, res) {
                 l.addEventListener('click', ev => progressL.removeChild(l));
                 setTimeout(() => progressL.removeChild(l), 2000);
             };
-            const formatBytes = (bytes, decimals = 2) => {
-                if (bytes === 0) return '0 Bytes';
-            
-                const k = 1024;
-                const dm = decimals < 0 ? 0 : decimals;
-                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-            }
             xhr.upload.onprogress = ev => {
                 l.textContent = file.name + ' ' 
                     + formatBytes(ev.loaded) + '/' + formatBytes(ev.total) + ' KB [' 
@@ -352,15 +359,23 @@ function viewEntryPoint(req, res) {
 
                 list.forEach(item => {
                     const extention = item.pathname.split('.').pop().toLowerCase();
+
+                    const containerL = document.createElement('div');
+                    const itemL = document.createElement('div');
                     const iconL = document.createElement('div');
                     const textL = document.createElement('div');
-                    const itemL = document.createElement('div');
+                    const sizeL = document.createElement('div');
+                    itemL.className = 'item';
                     iconL.className = 'icon';
+                    textL.className = 'text';
+                    sizeL.className = 'size';
                     iconL.textContent = 'Uk';
                     textL.textContent = item.pathname;
-                    itemL.className = 'item';
-                    itemL.appendChild(iconL);
-                    itemL.appendChild(textL);
+                    sizeL.textContent = formatBytes(item.info.size); 
+                    containerL.appendChild(iconL);
+                    containerL.appendChild(textL);
+                    itemL.appendChild(containerL);
+                    itemL.appendChild(sizeL);
 
                     const setIconProp = (initial, color) => {
                         iconL.textContent = initial;
