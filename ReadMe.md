@@ -11,4 +11,5 @@ Complete rewrite simplified version of [HFS](https://www.rejetto.com/hfs/).
 - `sudo ln -s $PWD/wfs /usr/bin`
 
 ## Author Note
-If you find it's useful please consider to [donate](https://paypal.me/MrWachid).
+If you find it's useful please consider to [donate on PayPal](https://paypal.me/MrWachid).
+Or [buy me a coffee](https://www.buymeacoffee.com/noorwachid).
