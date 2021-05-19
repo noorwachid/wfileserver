@@ -273,7 +273,7 @@ function viewEntryPoint(req, res) {
                 if (xhr.status === 200) {
                     l.textContent = file.name + ' is uploaded';
                     if (uploaddir === lastPath) {
-                        // getDirectoryList(lastPath);
+                        getDirectoryList(lastPath);
                     }
                 } else {
                     l.textContent = file.name + ' is failed to upload';
